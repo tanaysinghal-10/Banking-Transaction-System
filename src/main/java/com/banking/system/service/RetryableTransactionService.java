@@ -4,7 +4,7 @@ import com.banking.system.dto.request.DepositRequest;
 import com.banking.system.dto.request.TransferRequest;
 import com.banking.system.dto.request.WithdrawRequest;
 import com.banking.system.dto.response.TransactionResponse;
-import com.banking.system.exception.DuplicateRequestException;
+import com.banking.system.exception.*;
 import com.banking.system.model.IdempotencyRecord;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Backoff;
-import org.springframework.retry.annotation.Recover;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 
@@ -34,10 +33,17 @@ import java.util.Optional;
  * 1. First retry: wait 100ms
  * 2. Second retry: wait 200ms (100 * 2.0 multiplier)
  * 3. Third retry: wait 400ms
- * 4. If all 3 retries fail: call @Recover method which re-throws the exception
+ * 4. If all 3 retries fail: the exception propagates to GlobalExceptionHandler
  *
  * The exponential backoff gives other transactions time to complete,
  * increasing the chance of a successful retry.
+ *
+ * IMPORTANT — noRetryFor:
+ * Business exceptions (InsufficientBalance, AccountNotFound, DuplicateRequest, etc.)
+ * must NOT be retried — they will fail every time. Only transient infrastructure
+ * exceptions (OptimisticLockingFailure) should be retried. Without noRetryFor,
+ * Spring Retry would try to find a @Recover method for these exceptions
+ * and crash with "Cannot locate recovery method" if none matches.
  *
  * IDEMPOTENCY FLOW (for each operation):
  *
@@ -65,11 +71,19 @@ public class RetryableTransactionService {
      *
      * @Retryable parameters explained:
      * - retryFor: Only retry on OptimisticLockingFailure (concurrency conflict)
+     * - noRetryFor: Business exceptions should propagate immediately, never retry
      * - maxAttempts: Try up to 3 times total
      * - backoff: Start at 100ms, multiply by 2 each retry
      */
     @Retryable(
             retryFor = ObjectOptimisticLockingFailureException.class,
+            noRetryFor = {
+                    DuplicateRequestException.class,
+                    InsufficientBalanceException.class,
+                    AccountNotFoundException.class,
+                    AccountInactiveException.class,
+                    InvalidTransactionException.class
+            },
             maxAttempts = 3,
             backoff = @Backoff(delay = 100, multiplier = 2.0, maxDelay = 1000)
     )
@@ -97,6 +111,13 @@ public class RetryableTransactionService {
      */
     @Retryable(
             retryFor = ObjectOptimisticLockingFailureException.class,
+            noRetryFor = {
+                    DuplicateRequestException.class,
+                    InsufficientBalanceException.class,
+                    AccountNotFoundException.class,
+                    AccountInactiveException.class,
+                    InvalidTransactionException.class
+            },
             maxAttempts = 3,
             backoff = @Backoff(delay = 100, multiplier = 2.0, maxDelay = 1000)
     )
@@ -120,6 +141,13 @@ public class RetryableTransactionService {
      */
     @Retryable(
             retryFor = ObjectOptimisticLockingFailureException.class,
+            noRetryFor = {
+                    DuplicateRequestException.class,
+                    InsufficientBalanceException.class,
+                    AccountNotFoundException.class,
+                    AccountInactiveException.class,
+                    InvalidTransactionException.class
+            },
             maxAttempts = 3,
             backoff = @Backoff(delay = 100, multiplier = 2.0, maxDelay = 1000)
     )
@@ -136,31 +164,6 @@ public class RetryableTransactionService {
         saveIdempotency(idempotencyKey, requestJson, response);
 
         return response;
-    }
-
-    // ─── Recovery Methods ───
-    // Called when all retries are exhausted. Re-throws the exception
-    // so GlobalExceptionHandler can return a proper error response.
-
-    @Recover
-    public TransactionResponse recoverDeposit(ObjectOptimisticLockingFailureException ex,
-                                               DepositRequest request, String idempotencyKey) {
-        log.error("All retries exhausted for deposit | Key: {} | Error: {}", idempotencyKey, ex.getMessage());
-        throw ex;
-    }
-
-    @Recover
-    public TransactionResponse recoverWithdraw(ObjectOptimisticLockingFailureException ex,
-                                                WithdrawRequest request, String idempotencyKey) {
-        log.error("All retries exhausted for withdrawal | Key: {} | Error: {}", idempotencyKey, ex.getMessage());
-        throw ex;
-    }
-
-    @Recover
-    public TransactionResponse recoverTransfer(ObjectOptimisticLockingFailureException ex,
-                                                TransferRequest request, String idempotencyKey) {
-        log.error("All retries exhausted for transfer | Key: {} | Error: {}", idempotencyKey, ex.getMessage());
-        throw ex;
     }
 
     // ─── Private Helpers ───
