@@ -126,5 +126,4 @@ public class TransactionController {
 
         return ResponseEntity.ok(ApiResponse.success("Transaction history retrieved", history));
     }
-
 }
