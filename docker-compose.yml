@@ -1,0 +1,31 @@
+version: '3.8'
+
+# ─────────────────────────────────────────────────────────
+# Docker Compose for Banking Transaction System
+# ─────────────────────────────────────────────────────────
+# This file sets up a PostgreSQL database for the application.
+# Usage: docker compose up -d
+# ─────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: banking-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: banking_db
+      POSTGRES_USER: banking_user
+      POSTGRES_PASSWORD: banking_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - banking_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U banking_user -d banking_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  banking_data:
+    driver: local

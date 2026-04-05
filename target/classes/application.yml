@@ -1,0 +1,62 @@
+spring:
+  application:
+    name: banking-transaction-system
+
+  # ─── PostgreSQL Datasource ───
+  datasource:
+    url: jdbc:postgresql://localhost:5432/banking_db
+    username: banking_user
+    password: banking_pass
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      idle-timeout: 30000
+      connection-timeout: 20000
+      max-lifetime: 1800000
+
+  # ─── JPA / Hibernate ───
+  jpa:
+    hibernate:
+      ddl-auto: none          # Schema managed by schema.sql
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: UTC
+
+  # ─── Schema Initialization ───
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:data.sql
+      continue-on-error: true  # Don't fail if seed data already exists
+
+# ─── Server ───
+server:
+  port: 8080
+
+# ─── Logging ───
+logging:
+  level:
+    root: INFO
+    com.banking: DEBUG
+    org.springframework.retry: DEBUG
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# ─── Custom App Config ───
+app:
+  idempotency:
+    expiry-hours: 24
+    cleanup-cron: "0 0 * * * *"   # Every hour
+  retry:
+    max-attempts: 3
+    initial-interval-ms: 100
+    multiplier: 2.0
+    max-interval-ms: 1000
